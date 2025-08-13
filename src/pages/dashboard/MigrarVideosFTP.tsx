@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, Server, Upload, Eye, EyeOff, AlertCircle, CheckCircle, Download, Folder, Play, Trash2, FolderOpen, Video } from 'lucide-react';
+import { ChevronLeft, Server, Upload, Eye, EyeOff, AlertCircle, CheckCircle, Download, Folder, Play, Trash2, FolderOpen, Video, RefreshCw, X, Clock, HardDrive, Wifi, WifiOff } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useAuth } from '../../context/AuthContext';
@@ -38,6 +38,18 @@ interface MigrationProgress {
   error?: string;
 }
 
+interface MigrationStatus {
+  migrating: boolean;
+  status: 'idle' | 'migrating' | 'completed' | 'error' | 'cancelled';
+  progress: number;
+  completed: number;
+  total: number;
+  errors: string[];
+  uptime: number;
+  total_size: number;
+  estimated_remaining: number;
+}
+
 const MigrarVideosFTP: React.FC = () => {
   const { getToken } = useAuth();
   const [ftpData, setFtpData] = useState<FTPConnection>({
@@ -56,16 +68,75 @@ const MigrarVideosFTP: React.FC = () => {
   const [currentPath, setCurrentPath] = useState('/');
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [isMigrating, setIsMigrating] = useState(false);
-  const [migrationProgress, setMigrationProgress] = useState<MigrationProgress[]>([]);
+  const [migrationStatus, setMigrationStatus] = useState<MigrationStatus | null>(null);
   const [showMigrationModal, setShowMigrationModal] = useState(false);
   const [scanningDirectory, setScanningDirectory] = useState(false);
   const [directoryVideos, setDirectoryVideos] = useState<FTPVideo[]>([]);
   const [showDirectoryModal, setShowDirectoryModal] = useState(false);
   const [selectedDirectoryPath, setSelectedDirectoryPath] = useState('');
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'error'>('disconnected');
 
   useEffect(() => {
     loadFolders();
+    checkConnectionStatus();
+    
+    // Verificar status de migração a cada 5 segundos se estiver migrando
+    const interval = setInterval(() => {
+      if (isMigrating) {
+        checkMigrationStatus();
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
   }, []);
+
+  const checkConnectionStatus = async () => {
+    try {
+      const token = await getToken();
+      const response = await fetch('/api/ftp/connection-status', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setConnectionStatus(data.connected ? 'connected' : 'disconnected');
+          setIsConnected(data.connected);
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao verificar status da conexão:', error);
+      setConnectionStatus('error');
+    }
+  };
+
+  const checkMigrationStatus = async () => {
+    try {
+      const token = await getToken();
+      const response = await fetch('/api/ftp/migration-status', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setMigrationStatus(data);
+          setIsMigrating(data.migrating);
+          
+          // Se migração foi concluída
+          if (data.status === 'completed' && isMigrating) {
+            toast.success(`Migração concluída: ${data.completed}/${data.total} arquivos (${data.total_size}MB)`);
+            setSelectedFiles([]);
+            loadFolders(); // Recarregar pastas para atualizar espaço usado
+          } else if (data.status === 'error' && isMigrating) {
+            toast.error('Erro na migração. Verifique os detalhes.');
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao verificar status de migração:', error);
+    }
+  };
 
   const loadFolders = async () => {
     try {
@@ -75,6 +146,11 @@ const MigrarVideosFTP: React.FC = () => {
       });
       const data = await response.json();
       setFolders(data);
+      
+      // Selecionar primeira pasta por padrão se não houver seleção
+      if (data.length > 0 && !selectedFolder) {
+        setSelectedFolder(data[0].id.toString());
+      }
     } catch (error) {
       toast.error('Erro ao carregar pastas');
     }
@@ -111,12 +187,15 @@ const MigrarVideosFTP: React.FC = () => {
         setIsConnected(true);
         setFtpFiles(result.files || []);
         setCurrentPath(result.currentPath || '/');
+        setConnectionStatus('connected');
         toast.success('Conectado ao FTP com sucesso!');
       } else {
+        setConnectionStatus('error');
         toast.error(result.error || 'Erro ao conectar ao FTP');
       }
     } catch (error) {
       console.error('Erro ao conectar:', error);
+      setConnectionStatus('error');
       toast.error('Erro ao conectar ao FTP');
     } finally {
       setIsConnecting(false);
@@ -133,7 +212,6 @@ const MigrarVideosFTP: React.FC = () => {
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
-          ...ftpData,
           path
         })
       });
@@ -163,7 +241,6 @@ const MigrarVideosFTP: React.FC = () => {
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
-          ftpConnection: ftpData,
           directoryPath
         })
       });
@@ -178,7 +255,7 @@ const MigrarVideosFTP: React.FC = () => {
         if (result.videos.length === 0) {
           toast.info('Nenhum vídeo encontrado nesta pasta');
         } else {
-          toast.success(`${result.videos.length} vídeo(s) encontrado(s) na pasta`);
+          toast.success(`${result.videos.length} vídeo(s) encontrado(s) em ${result.scanned_directories || 1} diretório(s)`);
         }
       } else {
         toast.error(result.error || 'Erro ao escanear diretório');
@@ -227,30 +304,16 @@ const MigrarVideosFTP: React.FC = () => {
       return;
     }
 
+    if (isMigrating) {
+      toast.warning('Já existe uma migração em andamento');
+      return;
+    }
+
     setIsMigrating(true);
     setShowMigrationModal(true);
-    
-    // Inicializar progresso
-    const initialProgress = selectedFiles.map(filePath => ({
-      fileName: filePath.split('/').pop() || filePath,
-      progress: 0,
-      status: 'pending' as const
-    }));
-    setMigrationProgress(initialProgress);
 
     try {
       const token = await getToken();
-      
-      // Simular progresso durante o download
-      const progressInterval = setInterval(() => {
-        setMigrationProgress(prev => prev.map(item => {
-          if (item.status === 'pending') {
-            return { ...item, status: 'downloading', progress: Math.min(item.progress + 10, 90) };
-          }
-          return item;
-        }));
-      }, 1000);
-
       const response = await fetch('/api/ftp/migrate', {
         method: 'POST',
         headers: {
@@ -258,66 +321,80 @@ const MigrarVideosFTP: React.FC = () => {
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
-          ftpConnection: ftpData,
           files: selectedFiles,
           destinationFolder: selectedFolder
         })
       });
 
-      clearInterval(progressInterval);
-
       const result = await response.json();
 
       if (result.success) {
-        toast.success(`${result.migratedFiles} de ${result.totalFiles} arquivo(s) migrado(s) com sucesso!`);
-        setSelectedFiles([]);
-        
-        // Atualizar progresso final
-        setMigrationProgress(prev => prev.map(item => ({
-          ...item,
-          progress: 100,
-          status: 'completed'
-        })));
-
-        if (result.errors && result.errors.length > 0) {
-          console.warn('Erros durante a migração:', result.errors);
-        }
+        toast.success(result.message);
+        // Não limpar seleção ainda - aguardar conclusão
       } else {
         toast.error(result.error || 'Erro durante a migração');
-        
-        // Marcar como erro
-        setMigrationProgress(prev => prev.map(item => ({
-          ...item,
-          status: 'error',
-          error: result.error
-        })));
+        setIsMigrating(false);
       }
     } catch (error) {
       console.error('Erro na migração:', error);
       toast.error('Erro durante a migração');
-      
-      setMigrationProgress(prev => prev.map(item => ({
-        ...item,
-        status: 'error',
-        error: 'Erro de conexão'
-      })));
-    } finally {
       setIsMigrating(false);
     }
   };
 
+  const cancelMigration = async () => {
+    try {
+      const token = await getToken();
+      const response = await fetch('/api/ftp/cancel-migration', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        toast.success('Migração cancelada');
+        setIsMigrating(false);
+        setMigrationStatus(null);
+        setShowMigrationModal(false);
+      }
+    } catch (error) {
+      console.error('Erro ao cancelar migração:', error);
+      toast.error('Erro ao cancelar migração');
+    }
+  };
+
   const disconnect = () => {
-    setIsConnected(false);
-    setFtpFiles([]);
-    setCurrentPath('/');
-    setSelectedFiles([]);
-    setDirectoryVideos([]);
-    setShowDirectoryModal(false);
-    setFtpData({
-      ip: '',
-      usuario: '',
-      senha: '',
-      porta: 21
+    const token = getToken();
+    
+    // Chamar API para desconectar
+    fetch('/api/ftp/disconnect', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      }
+    }).then(() => {
+      setIsConnected(false);
+      setFtpFiles([]);
+      setCurrentPath('/');
+      setSelectedFiles([]);
+      setDirectoryVideos([]);
+      setShowDirectoryModal(false);
+      setConnectionStatus('disconnected');
+      setFtpData({
+        ip: '',
+        usuario: '',
+        senha: '',
+        porta: 21
+      });
+      toast.info('Desconectado do FTP');
+    }).catch(() => {
+      // Desconectar localmente mesmo se API falhar
+      setIsConnected(false);
+      setConnectionStatus('disconnected');
     });
   };
 
@@ -480,19 +557,113 @@ const MigrarVideosFTP: React.FC = () => {
           <div className="bg-green-50 border border-green-200 rounded-lg p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center">
-                <CheckCircle className="h-5 w-5 text-green-600 mr-2" />
+                {connectionStatus === 'connected' ? (
+                  <Wifi className="h-5 w-5 text-green-600 mr-2" />
+                ) : connectionStatus === 'error' ? (
+                  <WifiOff className="h-5 w-5 text-red-600 mr-2" />
+                ) : (
+                  <WifiOff className="h-5 w-5 text-gray-600 mr-2" />
+                )}
                 <span className="text-green-800 font-medium">
                   Conectado ao FTP: {ftpData.usuario}@{ftpData.ip}
                 </span>
               </div>
-              <button
-                onClick={disconnect}
-                className="text-red-600 hover:text-red-800 text-sm"
-              >
-                Desconectar
-              </button>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={checkConnectionStatus}
+                  className="text-blue-600 hover:text-blue-800 text-sm flex items-center"
+                >
+                  <RefreshCw className="h-3 w-3 mr-1" />
+                  Verificar
+                </button>
+                <button
+                  onClick={disconnect}
+                  className="text-red-600 hover:text-red-800 text-sm"
+                >
+                  Desconectar
+                </button>
+              </div>
             </div>
           </div>
+
+          {/* Status da migração ativa */}
+          {isMigrating && migrationStatus && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center">
+                  <Download className="h-5 w-5 text-blue-600 animate-pulse mr-3" />
+                  <h2 className="text-lg font-semibold text-blue-800">Migração em Andamento</h2>
+                </div>
+                <button
+                  onClick={cancelMigration}
+                  className="text-red-600 hover:text-red-800 flex items-center text-sm"
+                >
+                  <X className="h-4 w-4 mr-1" />
+                  Cancelar
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-blue-700 font-medium">
+                      Progresso: {migrationStatus.completed}/{migrationStatus.total} arquivos
+                    </span>
+                    <span className="text-blue-600">
+                      {migrationStatus.progress}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-blue-200 rounded-full h-2">
+                    <div
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${migrationStatus.progress}%` }}
+                    ></div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                  <div className="flex items-center">
+                    <Clock className="h-4 w-4 text-blue-600 mr-2" />
+                    <span className="text-blue-700">
+                      Tempo: {Math.floor(migrationStatus.uptime / 60)}m {migrationStatus.uptime % 60}s
+                    </span>
+                  </div>
+                  <div className="flex items-center">
+                    <HardDrive className="h-4 w-4 text-blue-600 mr-2" />
+                    <span className="text-blue-700">
+                      Transferido: {migrationStatus.total_size}MB
+                    </span>
+                  </div>
+                  <div className="flex items-center">
+                    <Download className="h-4 w-4 text-blue-600 mr-2" />
+                    <span className="text-blue-700">
+                      Concluídos: {migrationStatus.completed}
+                    </span>
+                  </div>
+                  <div className="flex items-center">
+                    <Clock className="h-4 w-4 text-blue-600 mr-2" />
+                    <span className="text-blue-700">
+                      Restante: ~{migrationStatus.estimated_remaining}min
+                    </span>
+                  </div>
+                </div>
+
+                {migrationStatus.errors.length > 0 && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                    <h4 className="text-red-800 font-medium mb-2">Erros encontrados:</h4>
+                    <ul className="text-red-700 text-sm space-y-1">
+                      {migrationStatus.errors.slice(0, 5).map((error, index) => (
+                        <li key={index}>• {error}</li>
+                      ))}
+                      {migrationStatus.errors.length > 5 && (
+                        <li>• ... e mais {migrationStatus.errors.length - 5} erro(s)</li>
+                      )}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Navegação e controles */}
           <div className="bg-white rounded-lg shadow-sm p-6">
@@ -548,7 +719,7 @@ const MigrarVideosFTP: React.FC = () => {
               <div className="max-h-96 overflow-y-auto">
                 {ftpFiles.length === 0 ? (
                   <div className="p-8 text-center text-gray-500">
-                    Nenhum arquivo encontrado neste diretório
+                    {isConnected ? 'Nenhum arquivo encontrado neste diretório' : 'Conecte-se ao FTP para ver os arquivos'}
                   </div>
                 ) : (
                   ftpFiles.map((file, index) => (
@@ -565,6 +736,7 @@ const MigrarVideosFTP: React.FC = () => {
                               type="checkbox"
                               checked={selectedFiles.includes(file.path)}
                               onChange={() => toggleFileSelection(file.path)}
+                              disabled={isMigrating}
                               className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
                             />
                           )}
@@ -594,6 +766,7 @@ const MigrarVideosFTP: React.FC = () => {
                             <>
                               <button
                                 onClick={() => navigateToDirectory(file.path)}
+                                disabled={isMigrating}
                                 className="text-primary-600 hover:text-primary-800 text-sm"
                                 title="Abrir pasta"
                               >
@@ -601,11 +774,15 @@ const MigrarVideosFTP: React.FC = () => {
                               </button>
                               <button
                                 onClick={() => scanDirectoryForVideos(file.path)}
-                                disabled={scanningDirectory}
+                                disabled={scanningDirectory || isMigrating}
                                 className="text-green-600 hover:text-green-800 text-sm disabled:opacity-50"
                                 title="Escanear pasta recursivamente"
                               >
-                                <FolderOpen className="h-4 w-4" />
+                                {scanningDirectory ? (
+                                  <RefreshCw className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <FolderOpen className="h-4 w-4" />
+                                )}
                               </button>
                             </>
                           )}
@@ -632,6 +809,7 @@ const MigrarVideosFTP: React.FC = () => {
                     id="pasta-destino"
                     value={selectedFolder}
                     onChange={(e) => setSelectedFolder(e.target.value)}
+                    disabled={isMigrating}
                     className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
                   >
                     <option value="">Selecione uma pasta</option>
@@ -665,6 +843,7 @@ const MigrarVideosFTP: React.FC = () => {
                       <span>{filePath.split('/').pop()}</span>
                       <button
                         onClick={() => toggleFileSelection(filePath)}
+                        disabled={isMigrating}
                         className="text-red-600 hover:text-red-800 ml-2"
                       >
                         <Trash2 className="h-3 w-3" />
@@ -757,41 +936,69 @@ const MigrarVideosFTP: React.FC = () => {
             </div>
             
             <div className="p-6 overflow-y-auto max-h-[60vh]">
-              <div className="space-y-4">
-                {migrationProgress.map((item, index) => (
-                  <div key={index} className="border border-gray-200 rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium text-gray-900">{item.fileName}</span>
-                      <span className={`text-sm px-2 py-1 rounded ${
-                        item.status === 'completed' ? 'bg-green-100 text-green-800' :
-                        item.status === 'error' ? 'bg-red-100 text-red-800' :
-                        item.status === 'downloading' ? 'bg-blue-100 text-blue-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {item.status === 'completed' ? 'Concluído' :
-                         item.status === 'error' ? 'Erro' :
-                         item.status === 'downloading' ? 'Baixando' :
-                         'Aguardando'}
-                      </span>
+              {migrationStatus ? (
+                <div className="space-y-4">
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-blue-600 mb-2">
+                      {migrationStatus.progress}%
                     </div>
-                    
-                    <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div className="text-lg text-gray-800 mb-4">
+                      {migrationStatus.completed} de {migrationStatus.total} arquivos migrados
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-4 mb-4">
                       <div
-                        className={`h-2 rounded-full transition-all duration-300 ${
-                          item.status === 'completed' ? 'bg-green-600' :
-                          item.status === 'error' ? 'bg-red-600' :
-                          'bg-blue-600'
-                        }`}
-                        style={{ width: `${item.progress}%` }}
+                        className="bg-blue-600 h-4 rounded-full transition-all duration-300"
+                        style={{ width: `${migrationStatus.progress}%` }}
                       ></div>
                     </div>
-                    
-                    {item.error && (
-                      <p className="text-red-600 text-sm mt-2">{item.error}</p>
-                    )}
                   </div>
-                ))}
-              </div>
+
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div className="bg-gray-50 p-3 rounded">
+                      <div className="font-medium text-gray-700">Tempo decorrido</div>
+                      <div className="text-lg text-gray-900">
+                        {Math.floor(migrationStatus.uptime / 60)}m {migrationStatus.uptime % 60}s
+                      </div>
+                    </div>
+                    <div className="bg-gray-50 p-3 rounded">
+                      <div className="font-medium text-gray-700">Dados transferidos</div>
+                      <div className="text-lg text-gray-900">{migrationStatus.total_size}MB</div>
+                    </div>
+                  </div>
+
+                  {migrationStatus.status === 'migrating' && (
+                    <div className="text-center">
+                      <button
+                        onClick={cancelMigration}
+                        className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 flex items-center mx-auto"
+                      >
+                        <X className="h-4 w-4 mr-2" />
+                        Cancelar Migração
+                      </button>
+                    </div>
+                  )}
+
+                  {migrationStatus.errors.length > 0 && (
+                    <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                      <h4 className="font-medium text-red-800 mb-2">
+                        Erros encontrados ({migrationStatus.errors.length}):
+                      </h4>
+                      <div className="max-h-32 overflow-y-auto">
+                        <ul className="text-red-700 text-sm space-y-1">
+                          {migrationStatus.errors.map((error, index) => (
+                            <li key={index}>• {error}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <Loader className="h-8 w-8 text-blue-600 animate-spin mx-auto mb-4" />
+                  <p className="text-gray-600">Iniciando migração...</p>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -32,6 +32,7 @@ const RelayRTMP: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [checkingUrl, setCheckingUrl] = useState(false);
   const [urlValid, setUrlValid] = useState<boolean | null>(null);
+  const [urlValidationMessage, setUrlValidationMessage] = useState<string>('');
   
   const [formData, setFormData] = useState({
     relay_url: '',
@@ -102,6 +103,7 @@ const RelayRTMP: React.FC = () => {
   const validateUrl = async (url: string) => {
     if (!url) {
       setUrlValid(null);
+      setUrlValidationMessage('');
       return;
     }
 
@@ -119,13 +121,17 @@ const RelayRTMP: React.FC = () => {
 
       const result = await response.json();
       setUrlValid(result.valid);
+      setUrlValidationMessage(result.message || '');
       
       if (!result.valid) {
-        toast.warning(result.message || 'URL parece estar offline ou inacessível');
+        console.warn('URL inválida:', result.message);
+      } else {
+        console.log('URL válida:', result.message);
       }
     } catch (error) {
       console.error('Erro ao validar URL:', error);
       setUrlValid(false);
+      setUrlValidationMessage('Erro ao validar URL');
     } finally {
       setCheckingUrl(false);
     }
@@ -141,12 +147,24 @@ const RelayRTMP: React.FC = () => {
       setFormData(prev => ({ ...prev, relay_type: 'rtmp' }));
     }
 
-    // Validar URL após 1 segundo de inatividade
-    const timeoutId = setTimeout(() => {
-      validateUrl(url);
-    }, 1000);
+    // Limpar validação anterior
+    setUrlValid(null);
+    setUrlValidationMessage('');
 
-    return () => clearTimeout(timeoutId);
+    // Validar URL após 2 segundos de inatividade
+    if (url.trim()) {
+      const timeoutId = setTimeout(() => {
+        validateUrl(url);
+      }, 2000);
+
+      return () => clearTimeout(timeoutId);
+    }
+  };
+
+  const manualValidateUrl = () => {
+    if (formData.relay_url) {
+      validateUrl(url);
+    }
   };
 
   const startRelay = async () => {
@@ -428,17 +446,36 @@ const RelayRTMP: React.FC = () => {
               </div>
             </div>
             {urlValid === false && (
-              <p className="mt-1 text-sm text-red-600">
-                URL parece estar offline ou inacessível
+              <p className="mt-1 text-sm text-red-600 flex items-center">
+                <AlertCircle className="h-3 w-3 mr-1" />
+                {urlValidationMessage || 'URL inválida ou inacessível'}
               </p>
             )}
             {urlValid === true && (
-              <p className="mt-1 text-sm text-green-600">
-                URL verificada e acessível
+              <p className="mt-1 text-sm text-green-600 flex items-center">
+                <CheckCircle className="h-3 w-3 mr-1" />
+                {urlValidationMessage || 'URL válida e acessível'}
+              </p>
+            )}
+            {checkingUrl && (
+              <p className="mt-1 text-sm text-blue-600 flex items-center">
+                <Activity className="h-3 w-3 mr-1 animate-spin" />
+                Validando URL...
               </p>
             )}
             <p className="mt-1 text-xs text-gray-500">
-              Deve ser rtmp:// OU https://....m3u8
+              Formatos aceitos: rtmp://servidor/app/stream OU https://servidor/stream.m3u8
+            </p>
+            <div className="mt-2">
+              <button
+                type="button"
+                onClick={manualValidateUrl}
+                disabled={!formData.relay_url || checkingUrl}
+                className="text-xs text-primary-600 hover:text-primary-800 disabled:opacity-50"
+              >
+                {checkingUrl ? 'Validando...' : 'Validar URL agora'}
+              </button>
+            </div>
             </p>
           </div>
 
@@ -493,7 +530,7 @@ const RelayRTMP: React.FC = () => {
             ) : (
               <button
                 onClick={startRelay}
-                disabled={loading || !formData.relay_url || urlValid === false}
+                disabled={loading || !formData.relay_url || urlValid === false || checkingUrl}
                 className="bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700 disabled:opacity-50 flex items-center"
               >
                 <Play className="h-4 w-4 mr-2" />
@@ -534,7 +571,7 @@ const RelayRTMP: React.FC = () => {
           </div>
         </div>
 
-        <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
+        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
           <h4 className="text-sm font-medium text-yellow-800 mb-2">⚠️ Importante</h4>
           <ul className="text-yellow-700 text-sm space-y-1">
             <li>• O relay funciona 24/7 enquanto estiver ativo</li>
@@ -542,11 +579,30 @@ const RelayRTMP: React.FC = () => {
             <li>• O sistema monitora automaticamente a conexão</li>
             <li>• Em caso de falha, o relay será automaticamente desativado</li>
             <li>• Apenas um relay pode estar ativo por vez</li>
+            <li>• <strong>FFmpeg</strong> é usado para capturar e retransmitir o stream</li>
+            <li>• Suporte a reconexão automática em caso de queda temporária</li>
+          </ul>
+        </div>
+
+        <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-md">
+          <h4 className="text-green-900 font-medium mb-2">✅ Recursos Implementados</h4>
+          <ul className="text-green-800 text-sm space-y-1">
+            <li>• <strong>Validação em tempo real:</strong> Verifica se URL está online antes de ativar</li>
+            <li>• <strong>Reconexão automática:</strong> Tenta reconectar automaticamente em caso de falha</li>
+            <li>• <strong>Monitoramento de processo:</strong> Detecta se FFmpeg parou inesperadamente</li>
+            <li>• <strong>Logs detalhados:</strong> Acompanhe o status e erros em tempo real</li>
+            <li>• <strong>Cleanup automático:</strong> Remove processos órfãos na reinicialização</li>
           </ul>
         </div>
       </div>
     </div>
   );
 };
+
+// Função auxiliar para formatar uptime
+function formatUptime(uptime: string): string {
+  if (!uptime || uptime === '00:00:00') return 'N/A';
+  return uptime;
+}
 
 export default RelayRTMP;
