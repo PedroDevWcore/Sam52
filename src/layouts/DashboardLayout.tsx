@@ -36,6 +36,8 @@ const DashboardLayout: React.FC = () => {
     { id: 'espectadores', label: 'Espectadores', path: '/dashboard/espectadores', icon: 'Users', visible: true, order: 10, category: 'analytics' },
     { id: 'relayrtmp', label: 'Relay RTMP', path: '/dashboard/relayrtmp', icon: 'ArrowLeftRight', visible: true, order: 11, category: 'streaming' },
     { id: 'conversao-videos', label: 'Conversão de Vídeos', path: '/dashboard/conversao-videos', icon: 'Settings', visible: true, order: 12, category: 'content' },
+    { id: 'app-multiplataforma', label: 'App Multiplataforma', path: '/dashboard/app-multiplataforma', icon: 'Smartphone', visible: true, order: 13, category: 'content' },
+    { id: 'app-android', label: 'App Android', path: '/dashboard/app-android', icon: 'Smartphone', visible: true, order: 14, category: 'content' },
     { id: 'configuracoes', label: 'Configurações', path: '/dashboard/configuracoes', icon: 'Settings', visible: true, order: 13, category: 'system' },
   ];
 
@@ -141,6 +143,11 @@ const DashboardLayout: React.FC = () => {
       Users: Users,
       ArrowLeftRight: ArrowLeftRight,
       Settings: Settings,
+      Smartphone: () => (
+        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+        </svg>
+      ),
     };
     return icons[iconName] || Settings;
   };

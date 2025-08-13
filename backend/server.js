@@ -25,6 +25,8 @@
  const conversionRoutes = require('./routes/conversion');
 const videoStreamRoutes = require('./routes/video-stream');
 const userWowzaSetupRoutes = require('./routes/user-wowza-setup');
+const appMultiplataformaRoutes = require('./routes/app-multiplataforma');
+const appAndroidRoutes = require('./routes/app-android');
 
   const app = express();
   const PORT = process.env.PORT || 3001;
@@ -507,6 +509,8 @@ const userWowzaSetupRoutes = require('./routes/user-wowza-setup');
  app.use('/api/conversion', conversionRoutes);
 app.use('/api/video-stream', videoStreamRoutes);
 app.use('/api/user-wowza-setup', userWowzaSetupRoutes);
+app.use('/api/app-multiplataforma', appMultiplataformaRoutes);
+app.use('/api/app-android', appAndroidRoutes);
 
   // Rota de teste
   app.get('/api/test', (req, res) => {

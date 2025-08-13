@@ -20,6 +20,8 @@ import MigrarVideosFTP from './pages/dashboard/MigrarVideosFTP';
 import Espectadores from './pages/dashboard/Espectadores';
 import RelayRTMP from './pages/dashboard/RelayRTMP';
 import ConversaoVideos from './pages/dashboard/ConversaoVideos';
+import AppMultiplataforma from './pages/dashboard/AppMultiplataforma';
+import AppAndroid from './pages/dashboard/AppAndroid';
 
 // Layouts
 import AuthLayout from './layouts/AuthLayout';
@@ -71,6 +73,8 @@ function App() {
               <Route path="espectadores" element={<Espectadores />} />
               <Route path="relayrtmp" element={<RelayRTMP />} />
               <Route path="conversao-videos" element={<ConversaoVideos />} />
+              <Route path="app-multiplataforma" element={<AppMultiplataforma />} />
+              <Route path="app-android" element={<AppAndroid />} />
             </Route>
 
             {/* Fallback route */}

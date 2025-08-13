@@ -970,6 +970,20 @@ const Dashboard: React.FC = () => {
               </div>
               <span className="text-sm text-gray-700 text-center">Conversão Vídeos</span>
             </Link>
+
+            <Link to="/dashboard/app-multiplataforma" className="flex flex-col items-center justify-center p-3 hover:bg-gray-50 rounded-lg transition-colors">
+              <div className="w-12 h-12 flex items-center justify-center bg-blue-100 text-blue-600 rounded-full mb-2">
+                <Smartphone className="h-6 w-6" />
+              </div>
+              <span className="text-sm text-gray-700 text-center">App Multiplataforma</span>
+            </Link>
+
+            <Link to="/dashboard/app-android" className="flex flex-col items-center justify-center p-3 hover:bg-gray-50 rounded-lg transition-colors">
+              <div className="w-12 h-12 flex items-center justify-center bg-green-100 text-green-600 rounded-full mb-2">
+                <Smartphone className="h-6 w-6" />
+              </div>
+              <span className="text-sm text-gray-700 text-center">App Android</span>
+            </Link>
           </div>
         </div>
       </div>
